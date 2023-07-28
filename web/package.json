@@ -11,6 +11,7 @@
     "@elysiajs/cookie": "^0.5.2",
     "elysia": "latest",
     "fast-xml-parser": "^4.2.6",
+    "openai": "^3.3.0",
     "twilio": "^4.14.1"
   },
   "devDependencies": {
