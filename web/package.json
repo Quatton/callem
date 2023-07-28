@@ -3,13 +3,22 @@
   "version": "1.0.44",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "lint": "eslint src/**/*.ts",
+    "ngrok": "ngrok http 3000"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/cookie": "^0.5.2",
+    "elysia": "latest",
+    "fast-xml-parser": "^4.2.6",
+    "twilio": "^4.14.1"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "@typescript-eslint/eslint-plugin": "^6.2.0",
+    "@typescript-eslint/parser": "^6.2.0",
+    "bun-types": "latest",
+    "eslint": "^8.45.0",
+    "typescript": "^5.1.6"
   },
   "module": "src/index.js"
 }
