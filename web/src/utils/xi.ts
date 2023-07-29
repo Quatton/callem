@@ -1,3 +1,5 @@
+import { unlinkSync } from "fs";
+
 export const XI_URL = "https://api.elevenlabs.io/v1";
 export const XI_VOICE_ID = Bun.env.XI_VOICE_ID!;
 export const XI_API_KEY = Bun.env.XI_API_KEY!;
@@ -29,6 +31,8 @@ export function textToSpeechStream(text: string) {
 
 export const toTempFile = async (response: Response, callSid: string) => {
   const tempFile = Bun.file(`./src/public/audio/${callSid}.mp3`);
+  if (await tempFile.exists()) unlinkSync(`./src/public/audio/${callSid}.mp3`);
+
   const tempWriter = tempFile.writer();
 
   await response.body?.pipeTo(

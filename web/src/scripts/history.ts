@@ -1,6 +1,4 @@
 import { XI_URL } from "../utils/xi";
-import { Lame } from "node-lame";
-import { unlinkSync } from "fs";
 // const searchParams = new URLSearchParams({
 //   page_size: "1",
 // });
@@ -32,5 +30,5 @@ const historyItem = await fetch(getHistoryItem, {
 
 if (!historyItem.body) throw new Error("No body");
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const wavFile = Bun.file("./src/scripts/test.wav");
-const wavWriter = wavFile.writer();
