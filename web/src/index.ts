@@ -1,14 +1,29 @@
-import { Elysia, ws } from "elysia";
+import { Elysia, t, ws } from "elysia";
 import Twilio from "twilio";
-import { twilioRequestBody } from "./types/twilio";
+import { twilioCallStatusBody, twilioRequestBody } from "./types/twilio";
 import { XMLParser } from "fast-xml-parser";
 import cookie from "@elysiajs/cookie";
 import { Conversation } from "./types/convo";
+import { textToSpeechStream, toTempFile } from "./utils/xi";
+import { staticPlugin } from "@elysiajs/static";
+import { unlinkSync } from "fs";
 
 const twilioPlugin = (app: Elysia) =>
   app
     .use(ws())
     .use(cookie())
+    .model(
+      "audio-stream-header",
+      t.Object({
+        "x-call-sid": t.String(),
+      })
+    )
+    .model(
+      "audio-stream-body",
+      t.Object({
+        text: t.String(),
+      })
+    )
     .onParse(async ({ request }, contentType) => {
       if (contentType === "application/xml") {
         const xml = await request.text();
@@ -17,37 +32,59 @@ const twilioPlugin = (app: Elysia) =>
         return json;
       }
     })
+    .onError(({ error }) => {
+      console.error(error);
+      return error.message;
+    })
     .derive((_) => ({
       twiml: new Twilio.twiml.VoiceResponse(),
     }))
-    .derive(
-      ({
-        cookie,
-      }): {
-        convo: Conversation;
-      } => {
-        const convo = cookie.convo;
-        try {
-          return {
-            convo: JSON.parse(convo) as Conversation,
-          };
-        } catch (e) {
-          return {
-            convo: {
-              messages: [],
-            },
-          };
+    .derive(({ cookie, setCookie }) => {
+      const convo = cookie.convo;
+      try {
+        return {
+          convo: JSON.parse(convo) as Conversation,
+        };
+      } catch (e) {
+        return {
+          convo: {
+            messages: [],
+          },
+          setConvo: (newConvo: Conversation) => {
+            setCookie("convo", JSON.stringify(newConvo), {
+              path: "/",
+            });
+          },
+        };
+      }
+    })
+    .derive(({ cookie, setCookie }) => {
+      const callSid = cookie.callSid;
+      return {
+        callSid,
+        setCallSid: (newCallSid: string) => {
+          setCookie("callSid", newCallSid, {
+            path: "/",
+          });
+        },
+      };
+    })
+    .post(
+      "/call-status",
+      ({ body }) => {
+        if (body.CallStatus === "completed") {
+          unlinkSync(`./src/public/audio/${body.CallSid}.mp3`);
         }
+      },
+      {
+        body: twilioCallStatusBody,
       }
     )
-    .derive(({ setCookie }) => ({
-      setConvo: (newConvo: Conversation) => {
-        setCookie("convo", JSON.stringify(newConvo), {
-          path: "/",
-        });
-      },
-    }))
     .post("/transcribe", ({ twiml, set }) => {
+      set.headers = {
+        "Content-Type": "application/xml",
+      };
+
       const gather = twiml.gather({
         speechTimeout: "auto",
         speechModel: "experimental_conversations",
@@ -56,22 +93,26 @@ const twilioPlugin = (app: Elysia) =>
         method: "POST",
       });
 
-      const firstMessage = "Say something, and I'll repeat it back to you.";
-
-      gather.say(firstMessage);
-
-      set.headers = {
-        "Content-Type": "application/xml",
-      };
+      gather.play(`https://${Bun.env.BASE_URL}/public/audio/greeting.mp3`);
 
       return twiml.toString();
     })
     .post(
       "/respond",
-      ({ twiml, body, set }) => {
+      async ({ twiml, body, set }) => {
         const voiceInput = body.SpeechResult;
 
-        twiml.say(`You said ${voiceInput}`);
+        const response = await textToSpeechStream(`
+          Okay, I heard you say ${voiceInput}.
+        `);
+
+        await toTempFile(response, body.CallSid);
+
+        twiml.play(
+          `https://${Bun.env.BASE_URL}/public/audio/${body.CallSid}.mp3`
+        );
+
+        twiml.redirect("/transcribe");
 
         set.headers = {
           "Content-Type": "application/xml",
@@ -85,7 +126,11 @@ const twilioPlugin = (app: Elysia) =>
     );
 
 const app = new Elysia()
-  .get("/", () => "Hello Elysia")
+  .use(
+    staticPlugin({
+      assets: "./src/public",
+    })
+  )
   .use(twilioPlugin)
   .listen(3000);
 
