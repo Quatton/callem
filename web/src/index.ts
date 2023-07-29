@@ -1,18 +1,16 @@
 import { Elysia } from "elysia";
 import { staticPlugin } from "@elysiajs/static";
 import { twilioPlugin } from "./routes/twilio";
+import { htmxPlugin } from "./routes/htmx";
 
 const app = new Elysia()
-  .use(
-    staticPlugin({
-      assets: "./src/public",
-    })
-  )
+  .use(staticPlugin())
   .onError(({ error }) => {
     console.error(error);
     return error.message;
   })
-  .use(twilioPlugin)
+  .group("/twilio", twilioPlugin)
+  .use(htmxPlugin)
   .listen(3000);
 
 console.log(

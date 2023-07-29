@@ -75,9 +75,9 @@ export const twilioPlugin = (app: Elysia) =>
       "/call-status",
       async ({ body }) => {
         if (body.CallStatus === "completed") {
-          const file = Bun.file(`./src/public/audio/${body.CallSid}.mp3`);
+          const file = Bun.file(`./public/audio/${body.CallSid}.mp3`);
           if (await file.exists())
-            unlinkSync(`./src/public/audio/${body.CallSid}.mp3`);
+            unlinkSync(`./public/audio/${body.CallSid}.mp3`);
         }
       },
       {

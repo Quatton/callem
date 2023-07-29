@@ -3,13 +3,18 @@
   "version": "1.0.44",
   "scripts": {
     "test": "bun test",
-    "dev": "bun run --watch src/index.ts",
     "lint": "eslint src/**/*.ts",
-    "ngrok": "ngrok http 3000"
+    "ngrok": "ngrok http 3000",
+    "dev": "bun run --hot src/index.ts",
+    "tw": "bunx tailwindcss -i ./src/styles/globals.css -o ./public/styles/globals.css",
+    "tw:dev": "bun run tw --watch"
   },
   "dependencies": {
     "@elysiajs/cookie": "^0.5.2",
+    "@elysiajs/html": "^0.5.2",
     "@elysiajs/static": "^0.5.3",
+    "@tailwindcss/typography": "^0.5.9",
+    "daisyui": "latest",
     "elysia": "latest",
     "fast-xml-parser": "^4.2.6",
     "lame": "^1.2.4",
@@ -23,6 +28,8 @@
     "@typescript-eslint/parser": "^6.2.0",
     "bun-types": "latest",
     "eslint": "^8.45.0",
+    "tailwindcss": "^3.3.3",
+    "typed-html": "^3.0.1",
     "typescript": "^5.1.6"
   },
   "module": "src/index.js"
