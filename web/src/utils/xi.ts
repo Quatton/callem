@@ -30,8 +30,8 @@ export function textToSpeechStream(text: string) {
 }
 
 export const toTempFile = async (response: Response, callSid: string) => {
-  const tempFile = Bun.file(`./public/audio/${callSid}.mp3`);
-  if (await tempFile.exists()) unlinkSync(`./public/audio/${callSid}.mp3`);
+  const tempFile = Bun.file(`./audio/${callSid}.mp3`);
+  if (await tempFile.exists()) unlinkSync(`./audio/${callSid}.mp3`);
 
   const tempWriter = tempFile.writer();
 

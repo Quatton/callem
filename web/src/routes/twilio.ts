@@ -75,9 +75,8 @@ export const twilioPlugin = (app: Elysia) =>
       "/call-status",
       async ({ body }) => {
         if (body.CallStatus === "completed") {
-          const file = Bun.file(`./public/audio/${body.CallSid}.mp3`);
-          if (await file.exists())
-            unlinkSync(`./public/audio/${body.CallSid}.mp3`);
+          const file = Bun.file(`./audio/${body.CallSid}.mp3`);
+          if (await file.exists()) unlinkSync(`./audio/${body.CallSid}.mp3`);
         }
       },
       {
@@ -108,7 +107,7 @@ export const twilioPlugin = (app: Elysia) =>
           const firstMessage = data
             ? data.completion
             : "Hello! This is Nutchanon. I am a very real human being -- not a robot whatsoever.";
-          console.log(`Assistant: ${firstMessage}`);
+
           setConvo({
             messages: [
               ...convo.messages,
@@ -123,7 +122,7 @@ export const twilioPlugin = (app: Elysia) =>
           await toTempFile(response, body.CallSid);
 
           gather.play(
-            `https://${process.env.BASE_URL}/public/audio/${body.CallSid}.mp3`
+            `https://${process.env.BASE_URL}/audio/${body.CallSid}.mp3`
           );
         }
 
@@ -142,7 +141,7 @@ export const twilioPlugin = (app: Elysia) =>
       "/respond",
       async ({ twiml, body, set, convo, setConvo }) => {
         const voiceInput = body.SpeechResult;
-        console.log(`User: ${voiceInput}`);
+
         setConvo({
           messages: [
             ...convo.messages,
@@ -172,13 +171,10 @@ export const twilioPlugin = (app: Elysia) =>
           ],
         });
 
-        console.log(`Assistant: ${nextMessage}`);
         const response = await textToSpeechStream(nextMessage);
         await toTempFile(response, body.CallSid);
 
-        twiml.play(
-          `https://${process.env.BASE_URL}/public/audio/${body.CallSid}.mp3`
-        );
+        twiml.play(`https://${process.env.BASE_URL}/audio/${body.CallSid}.mp3`);
 
         if (error) {
           console.error(error);

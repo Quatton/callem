@@ -5,6 +5,12 @@ import { htmxPlugin } from "./routes/htmx";
 
 const app = new Elysia()
   .use(staticPlugin())
+  .use(
+    staticPlugin({
+      assets: "audio",
+      prefix: "/audio",
+    })
+  )
   .onError(({ error }) => {
     console.error(error);
     return error.message;
