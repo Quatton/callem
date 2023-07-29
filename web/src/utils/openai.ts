@@ -1,6 +1,6 @@
 import { ChatCompletionRequestMessage, Configuration, OpenAIApi } from "openai";
 const configuration = new Configuration({
-  apiKey: Bun.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export const openai = new OpenAIApi(configuration);
@@ -96,7 +96,7 @@ export async function createChatCompletion(
       functions: [
         {
           name: "end_call",
-          description: "End the call if ",
+          description: "End the call if the user requests it.",
           parameters: {
             type: "object",
             properties: {

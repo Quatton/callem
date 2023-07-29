@@ -9,7 +9,7 @@ import { createWriteStream } from "fs";
 test(
   "connect to ws",
   async () => {
-    const ws = new WebSocket(`wss://${Bun.env.BASE_URL}/audio/1234`);
+    const ws = new WebSocket(`wss://${process.env.BASE_URL}/audio/1234`);
 
     ws.onopen = () => {
       ws.send(
@@ -73,7 +73,7 @@ test(
 );
 
 test.skip("simple", async () => {
-  const ws = new WebSocket(`wss://${Bun.env.BASE_URL}/simple`);
+  const ws = new WebSocket(`wss://${process.env.BASE_URL}/simple`);
   const receive = [];
 
   ws.onmessage = (ev) => {

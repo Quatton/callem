@@ -8,7 +8,7 @@ import { XI_URL } from "../utils/xi";
 // const history = await fetch(getHistoryURL, {
 //   method: "GET",
 //   headers: {
-//     "xi-api-key": Bun.env.XI_API_KEY!,
+//     "xi-api-key": process.env.XI_API_KEY!,
 //     Accept: "application/json",
 //   },
 // });
@@ -17,13 +17,13 @@ import { XI_URL } from "../utils/xi";
 
 // console.log(json);
 
-const getHistoryItem = `${XI_URL}/history/${Bun.env
+const getHistoryItem = `${XI_URL}/history/${process.env
   .TEMP_XI_HISTORY_ITEM_ID!}/audio`;
 
 const historyItem = await fetch(getHistoryItem, {
   method: "GET",
   headers: {
-    "xi-api-key": Bun.env.XI_API_KEY!,
+    "xi-api-key": process.env.XI_API_KEY!,
     Accept: "audio/mpeg",
   },
 });

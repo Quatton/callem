@@ -1,8 +1,8 @@
 import { unlinkSync } from "fs";
 
 export const XI_URL = "https://api.elevenlabs.io/v1";
-export const XI_VOICE_ID = Bun.env.XI_VOICE_ID!;
-export const XI_API_KEY = Bun.env.XI_API_KEY!;
+export const XI_VOICE_ID = process.env.XI_VOICE_ID!;
+export const XI_API_KEY = process.env.XI_API_KEY!;
 
 export function textToSpeechStream(text: string) {
   const url = new URL(`${XI_URL}/text-to-speech/${XI_VOICE_ID}/stream`);

@@ -1,12 +1,12 @@
 {
-  "name": "twilio-eleven-labs",
-  "version": "1.0.44",
+  "name": "callem",
+  "version": "1.0.0",
   "scripts": {
     "test": "bun test",
     "lint": "eslint src/**/*.ts",
     "ngrok": "ngrok http 3000",
     "dev": "bun run --hot src/index.ts",
-    "tw": "bunx tailwindcss -i ./src/styles/globals.css -o ./public/styles/globals.css",
+    "tw": "bunx tailwindcss -i ./src/assets/globals.css -o ./public/styles/globals.css",
     "tw:dev": "bun run tw --watch"
   },
   "dependencies": {
@@ -32,5 +32,5 @@
     "typed-html": "^3.0.1",
     "typescript": "^5.1.6"
   },
-  "module": "src/index.js"
+  "module": "src/index.ts"
 }
