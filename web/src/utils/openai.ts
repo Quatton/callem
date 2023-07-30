@@ -9,7 +9,7 @@ export type Conversation = {
   messages: ChatCompletionRequestMessage[];
 };
 
-const speechRefinerPrompt = (messageToCorrect: string) =>
+const speechRefinerPrompt = (messageToCorrect: string, userMetaData: string) =>
   `
 [CONTEXT]
 I am an assistant that will help correct mistakes in a speech transcription.
@@ -25,21 +25,31 @@ Generate only the message without your thought process.
 
 [TRANSCRIPTION TO CORRECT]
 ${messageToCorrect}
+
+[USER'S PERSONAL INFO]
+${userMetaData}
 `.trim();
 
-const conversationPrompt = (today: Date) =>
+const conversationPrompt = (
+  today: Date,
+  userMetaData: string,
+  myInfo: string
+) =>
   `[CONTEXT]
-I am Nutchanon, or at least pretending to be. I am a real human being, not a robot.
+I am Quatton, or at least pretending to be. I am a real human being, not a robot.
 If anyone ever asks, I will tell them that I am a very human being. I just kinda look awkward, then I'd laugh it off.
 I am not an assistant. I am myself.
 
 [MY PERSONAL INFO]
-Name: Nutchanon Taechasuk
+Name: Quatton
 Age: 20
 Favourite food: Pizza
 Favourite sport: Boxing
 Hobby: Playing video games
 Personality: Friendly, outgoing, and funny. Likes to make jokes and puns.
+
+[ADDITIONAL INFO ABOUT ME]
+${myInfo}
 
 [CALL INFO]
 Today's Date: ${today.toLocaleDateString()}
@@ -48,6 +58,11 @@ Today's Date: ${today.toLocaleDateString()}
 Try to have a natural conversation with the user.
 Do not make it too long. Keep your answers short and simple.
 Generate only the message you want to say without your thought process.
+Refer to ADDITIONAL INFO ABOUT ME if the user asks anything related to it.
+Do not make up anything that is contradictory to ADDITIONAL INFO ABOUT ME.
+
+[USER'S PERSONAL INFO]
+${userMetaData}
 `.trim();
 
 const additionalInstructionPrompt = (instruction: string) =>
@@ -55,17 +70,20 @@ const additionalInstructionPrompt = (instruction: string) =>
 ${instruction}
 `.trim();
 
-const summaryPrompt = (today: Date) =>
+const summaryPrompt = (today: Date, userMetaData: string) =>
   `
 [CONTEXT]
 I am an assistant that will help summarize a call and send it to the intended recipient.
 
 [CALL INFO]
-Caller: +81-****-565554
 Call Date: ${today.toLocaleDateString()}
 
 [INSTRUCTION]
-Make a summary of the call and output only the summary without anything else.`.trim();
+Make a summary of the call and output only the summary without anything else.
+
+[USER'S PERSONAL INFO]
+${userMetaData}
+`.trim();
 
 type ChatCompletionError =
   | "OPENAI_API_ERROR"
@@ -79,6 +97,8 @@ type CallResponse = {
 
 export async function createChatCompletion(
   messages: Conversation["messages"],
+  userMetaData = "(No user metadata provided)",
+  additionalInfo = "(No additional info provided)",
   additionalInstruction: string | null = null
 ): Promise<
   | {
@@ -92,7 +112,7 @@ export async function createChatCompletion(
 > {
   const today = new Date();
 
-  const systemMessage = conversationPrompt(today);
+  const systemMessage = conversationPrompt(today, userMetaData, additionalInfo);
 
   try {
     const messagePayLoad: ChatCompletionRequestMessage[] = [
@@ -192,7 +212,8 @@ function handleOpenAIError(e: unknown): {
 }
 
 export async function createCallSummary(
-  messages: Conversation["messages"]
+  messages: Conversation["messages"],
+  userMetaData = "(No user metadata provided)"
 ): Promise<
   | {
       data: string;
@@ -215,7 +236,7 @@ export async function createCallSummary(
 
   const today = new Date();
 
-  const systemMessage = summaryPrompt(today);
+  const systemMessage = summaryPrompt(today, userMetaData);
 
   try {
     const completion = await openai.createChatCompletion({
@@ -246,7 +267,8 @@ export async function createCorrection(
   messageToCorrect: {
     role: "user";
     content: string;
-  }
+  },
+  userMetadata = "(No user metadata provided)"
 ): Promise<
   | {
       data: {
@@ -267,7 +289,7 @@ export async function createCorrection(
         ...history,
         {
           role: "system",
-          content: speechRefinerPrompt(messageToCorrect.content),
+          content: speechRefinerPrompt(messageToCorrect.content, userMetadata),
         },
       ],
     });

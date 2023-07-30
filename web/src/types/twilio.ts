@@ -64,6 +64,51 @@ export const twilioCallStatusBody = t.Object({
   FromState: t.String(),
 });
 
+export type TwilioRequestBody = {
+  Called: string;
+  ToState: string;
+  CallerCountry: string;
+  Direction: string;
+  SpeechResult: string;
+  CallerState: string;
+  Language: string;
+  Confidence: string;
+  ToZip: string;
+  CallSid: string;
+  To: string;
+  CallerZip: string;
+  ToCountry: string;
+  ApiVersion: string;
+  CalledZip: string;
+  CallStatus: string;
+  CalledCity: string;
+  From: string;
+  AccountSid: string;
+  CalledCountry: string;
+  CallerCity: string;
+  Caller: string;
+  FromCountry: string;
+  ToCity: string;
+  FromCity: string;
+  CalledState: string;
+  FromZip: string;
+  FromState: string;
+};
+
+export const twilioFirstRequestBody = t.Composite([
+  t.Omit(twilioRequestBody, ["SpeechResult", "Language", "Confidence"]),
+  t.Object({
+    CallToken: t.Optional(t.String()),
+  }),
+]);
+
+export type TwilioFirstRequestBody = Omit<
+  TwilioRequestBody,
+  "SpeechResult" | "Language" | "Confidence"
+> & {
+  CallToken?: string;
+};
+
 export type TwilioStreamConnectedMessage = {
   event: "connected";
   protocal: "Call";

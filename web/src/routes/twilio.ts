@@ -4,7 +4,11 @@ import { XMLParser } from "fast-xml-parser";
 import { unlinkSync } from "fs";
 import Twilio from "twilio";
 import { Conversation } from "../types/convo";
-import { twilioCallStatusBody, twilioRequestBody } from "../types/twilio";
+import {
+  twilioCallStatusBody,
+  twilioFirstRequestBody,
+  twilioRequestBody,
+} from "../types/twilio";
 import {
   createCallSummary,
   createChatCompletion,
@@ -102,7 +106,10 @@ export const twilioPlugin = (app: Elysia) =>
 
           const { email } = user;
 
-          const { data: summary } = await createCallSummary(convo.messages);
+          const { data: summary } = await createCallSummary(
+            convo.messages,
+            user.metadata
+          );
 
           await sendCallSummary(
             summary ?? "We were unable to generate a summary for this call.",
@@ -193,12 +200,13 @@ export const twilioPlugin = (app: Elysia) =>
         if (convo.messages.length === 0) {
           const { data } = await createChatCompletion(
             messages,
-            "Greet the user with enthusiasm"
+            user.metadata,
+            "Greet the user with enthusiasm. If you have their name, call them by their name."
           );
 
           const firstMessage = data
             ? data.completion
-            : "Hello! This is Nutchanon. I am a very real human being -- not a robot whatsoever.";
+            : "Hello! This is Quatton. I am a very real human being -- not a robot whatsoever.";
 
           messages.push({
             role: "assistant",
@@ -231,17 +239,21 @@ export const twilioPlugin = (app: Elysia) =>
         return twiml.toString();
       },
       {
-        body: t.Composite([
-          t.Omit(twilioRequestBody, ["SpeechResult", "Language", "Confidence"]),
-          t.Object({
-            CallToken: t.Optional(t.String()),
-          }),
-        ]),
+        body: twilioFirstRequestBody,
       }
     )
     .post(
       "/respond",
-      async ({ twiml, body, set, convo, playJwt, setConvo, db }) => {
+      async ({
+        twiml,
+        body,
+        set,
+        convo,
+        playJwt,
+        setConvo,
+        db,
+        store: { serverMetadata },
+      }) => {
         const voiceInput = body.SpeechResult;
         const messages = convo.messages;
 
@@ -258,10 +270,14 @@ export const twilioPlugin = (app: Elysia) =>
           return twiml.toString();
         }
 
-        const { data: correctedMessageRaw } = await createCorrection(messages, {
-          role: "user",
-          content: voiceInput,
-        });
+        const { data: correctedMessageRaw } = await createCorrection(
+          messages,
+          {
+            role: "user",
+            content: voiceInput,
+          },
+          user.metadata
+        );
 
         const correctedMessage = correctedMessageRaw
           ? correctedMessageRaw.content
@@ -274,7 +290,8 @@ export const twilioPlugin = (app: Elysia) =>
 
         const { data, error } = await createChatCompletion(
           messages,
-          correctedMessage
+          user.metadata,
+          serverMetadata.info
         );
 
         const nextMessage = data

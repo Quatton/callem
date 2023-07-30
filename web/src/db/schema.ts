@@ -9,10 +9,11 @@ export const verifiedUser = sqliteTable("verified_user", {
   })
     .default(false)
     .notNull(),
+  metadata: text("metadata").notNull().default(""),
 });
 
 export type VerifiedUser = InferModel<typeof verifiedUser>;
-export type Auth = Pick<VerifiedUser, "phone" | "email">;
+export type Auth = Pick<VerifiedUser, "phone" | "email" | "metadata">;
 
 export const phoneCodes = sqliteTable("phone_codes", {
   phone: text("phone").primaryKey(),

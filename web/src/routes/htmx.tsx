@@ -18,64 +18,71 @@ export const htmxPlugin = (app: Elysia) =>
     .use(authMiddleware)
     .use(dbPlugin)
     .get("/favicon.ico", () => Bun.file("./src/assets/favicon.ico"))
-    .get("/", ({ html, auth }) =>
-      html(
-        <BaseHtml>
-          <div class="min-h-screen grid place-content-center py-8">
-            <div class="grid place-content-center grid-cols-1 sm:grid-cols-2 min-h-96 place-items-center gap-4">
-              <LeftPanel auth={auth} />
-              <div>
-                {!auth ? (
-                  <form hx-post="/verify-phone" class="form-control gap-2">
-                    <p>
-                      Oops, you're not logged in. Please verify your phone
-                      number.
-                    </p>
-                    <input
-                      type="phone"
-                      name="phone"
-                      class="input input-primary"
-                      placeholder="Enter your phone number with the country code"
-                      required="true"
-                    />
-                    <button type="submit" class="btn btn-primary">
-                      Verify
-                    </button>
-                  </form>
-                ) : (
-                  <div class="text-center flex flex-col items-center gap-4">
-                    <h1 class="text-4xl font-bold">Welcome</h1>
-                    <span class="space-x-1">
-                      <span class="text-xl max-w-xs">You are logged in as</span>
-                      <span class="text-xl max-w-xs">{auth.phone}</span>
-                      <a href="/logout" class="btn btn-error">
-                        Logout
-                      </a>
-                    </span>
+    .get(
+      "/",
+      ({
+        html,
+        auth,
+        store: {
+          serverMetadata: { info },
+        },
+      }) =>
+        html(
+          <BaseHtml>
+            <div class="min-h-screen grid place-content-center p-16">
+              <div class="grid place-content-center grid-cols-1 sm:grid-cols-2 min-h-96 place-items-center gap-4">
+                <LeftPanel auth={auth} />
+                <div>
+                  {!auth ? (
+                    <form hx-post="/verify-phone" class="form-control gap-2">
+                      <p>
+                        Oops, you're not logged in. Please verify your phone
+                        number.
+                      </p>
+                      <input
+                        type="phone"
+                        name="phone"
+                        class="input input-primary"
+                        placeholder="Enter your phone number with the country code"
+                        required="true"
+                      />
+                      <button type="submit" class="btn btn-primary">
+                        Verify
+                      </button>
+                    </form>
+                  ) : (
+                    <div class="text-center flex flex-col items-center">
+                      <h1 class="text-4xl font-bold">Welcome</h1>
+                      <span class="space-x-1">
+                        <span class="text-xl max-w-xs">
+                          You are logged in as
+                        </span>
+                        <span class="text-xl max-w-xs">{auth.phone}</span>
+                        <a href="/logout" class="btn btn-error">
+                          Logout
+                        </a>
+                      </span>
 
-                    <p>
-                      Awaiting your call at
-                      <a
-                        href={`tel:${Bun.env.PHONE_NUMBER}`}
-                        class="link link-secondary"
-                      >
-                        {Bun.env.PHONE_NUMBER}
-                      </a>
-                    </p>
+                      <ChangeEmailForm email={auth.email} />
+                      <ChangeMetadataForm metadata={auth.metadata} />
 
-                    <p>
-                      Optionally, you can ask us to send you the call summary
-                      via email.
-                    </p>
-
-                    <ChangeEmailForm email={auth.email} />
-                  </div>
-                )}
+                      <ChangeMyInfoForm myInfo={info} />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div class="text-center mt-8">
+                <p>
+                  Build by{" "}
+                  <a href="https://github.com/Quatton" class="link link-accent">
+                    Quatton
+                  </a>{" "}
+                  for Lablab.ai XI Labs Hackathon (28-30 July 2023)
+                </p>
               </div>
             </div>
-          </div>
-        </BaseHtml>
-      )
+          </BaseHtml>
+        )
     )
     .get(
       "/error",
@@ -188,7 +195,7 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/change-email",
-      async ({ body, html, auth, set, authJwt, setCookie }) => {
+      async ({ body, html, auth, set, authJwt, db, removeCookie }) => {
         const email = body.email;
 
         if (!auth) {
@@ -201,14 +208,27 @@ export const htmxPlugin = (app: Elysia) =>
           return;
         }
 
-        const newToken = await authJwt.sign({ phone: auth.phone, email });
-
-        setCookie("auth_session", newToken, {
-          httpOnly: true,
-          maxAge: 7 * 86400,
+        const newToken = await authJwt.sign({
+          phone: auth.phone,
+          email,
+          metadata: auth.metadata,
         });
 
-        return html(<ChangeEmailForm email={auth.email} />);
+        const user = await db
+          .update(verifiedUser)
+          .set({ email })
+          .where(eq(verifiedUser.phone, auth.phone))
+          .returning()
+          .get();
+
+        removeCookie("auth_session");
+        set.headers[
+          "set-cookie"
+        ] = `auth_session=${newToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${
+          60 * 60 * 24 * 7
+        }`;
+
+        return html(<ChangeEmailForm email={user.email} />);
       },
       {
         body: t.Object({
@@ -216,6 +236,61 @@ export const htmxPlugin = (app: Elysia) =>
             // regex
             pattern: "^[a-zA-Z0-9+_.-]+@[a-zA-Z0-9.-]+$",
           }),
+        }),
+      }
+    )
+    .post(
+      "/change-metadata",
+      async ({ body, html, auth, set, authJwt, db }) => {
+        const metadata = body.metadata;
+
+        if (!auth) {
+          set.status = 401;
+          redirectToError({
+            set,
+            code: "NOT_AUTHORIZED",
+            message: "You are not authorized to do this",
+          });
+          return;
+        }
+
+        const newToken = await authJwt.sign({
+          phone: auth.phone,
+          email: auth.email,
+          metadata,
+        });
+
+        const user = await db
+          .update(verifiedUser)
+          .set({ metadata })
+          .where(eq(verifiedUser.phone, auth.phone))
+          .returning()
+          .get();
+
+        set.headers[
+          "set-cookie"
+        ] = `auth_session=${newToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${
+          60 * 60 * 24 * 7
+        }`;
+
+        return html(<ChangeMetadataForm metadata={user.metadata} />);
+      },
+      {
+        body: t.Object({
+          metadata: t.String(),
+        }),
+      }
+    )
+    .post(
+      "/change-my-info",
+      ({ store: { serverMetadata }, body: { myInfo } }) => {
+        serverMetadata.info = myInfo;
+
+        return <ChangeMyInfoForm myInfo={myInfo} />;
+      },
+      {
+        body: t.Object({
+          myInfo: t.String(),
         }),
       }
     )
@@ -256,7 +331,11 @@ export const htmxPlugin = (app: Elysia) =>
               return;
             }
 
-            const token = await authJwt.sign({ phone, email: email || null });
+            const token = await authJwt.sign({
+              phone,
+              email: email || null,
+              metadata: user.metadata,
+            });
             setCookie("auth_session", token, {
               httpOnly: true,
               maxAge: 7 * 86400,
@@ -327,6 +406,7 @@ export const authMiddleware = (app: Elysia) =>
           email: t.Union([t.String(), t.Null()], {
             default: null,
           }),
+          metadata: t.Optional(t.String({ default: "" })),
         }),
       })
     )
@@ -337,7 +417,6 @@ export const authMiddleware = (app: Elysia) =>
         removeCookie,
       }): Promise<{ auth: Auth | null }> => {
         const auth = cookie.auth_session;
-
         if (!auth) {
           return {
             auth: null,
@@ -357,6 +436,7 @@ export const authMiddleware = (app: Elysia) =>
           auth: {
             phone: isOk.phone,
             email: isOk.email,
+            metadata: isOk.metadata || "",
           },
         };
       }
@@ -364,21 +444,84 @@ export const authMiddleware = (app: Elysia) =>
 
 function ChangeEmailForm({ email = "" }: { email: string | null }) {
   return (
-    <form hx-post="/change-email" class="form-control gap-2">
+    <form hx-post="/change-email" class="form-control self-stretch">
       <label for="change-email-input" class="label">
-        Email (Originally: <strong>{email}</strong>)
+        <span class="label-text">
+          Email (Originally: <strong>{email}</strong>)
+        </span>
       </label>
-      <input
-        id="change-email-input"
-        type="email"
-        name="email"
-        class="input input-primary"
-        placeholder="Email (Optional)"
-        value={email ?? ""}
-      />
-      <button type="submit" class="btn btn-primary">
-        Change
-      </button>
+      <div class="input-group">
+        <input
+          id="change-email-input"
+          type="email"
+          name="email"
+          class="input input-primary grow"
+          placeholder="Email (Optional)"
+          value={email ?? ""}
+        />
+        <button type="submit" class="btn btn-primary">
+          Change
+        </button>
+      </div>
+
+      <label class="label">
+        <span class="label-text">
+          We will send you a call summary via email
+        </span>
+      </label>
+    </form>
+  );
+}
+
+function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
+  return (
+    <form hx-post="/change-metadata" class="form-control self-stretch">
+      <label for="change-metadata-input" class="label">
+        <span class="label-text">Metadata</span>
+      </label>
+      <div class="input-group input-group-vertical">
+        <textarea
+          id="change-metadata-input"
+          name="metadata"
+          class="textarea textarea-primary resize-none"
+          placeholder="Your name, your company, etc."
+        >
+          {metadata ?? ""}
+        </textarea>
+        <button type="submit" class="btn btn-primary">
+          Update
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ChangeMyInfoForm({ myInfo }: { myInfo: string }) {
+  return (
+    <form hx-post="/change-my-info" class="form-control self-stretch">
+      <label for="change-my-info-input" class="label">
+        <span class="label-text">Callee's info</span>
+      </label>
+      <div class="input-group input-group-vertical">
+        <textarea
+          id="change-my-info-input"
+          name="myInfo"
+          class="textarea textarea-primary resize-none"
+          placeholder="Information about me"
+        >
+          {myInfo ?? ""}
+        </textarea>
+        <button type="submit" class="btn btn-primary">
+          Update and See what happens 👀
+        </button>
+      </div>
+      <label class="label grow">
+        <span class="label-text">
+          This information belongs to ME. Try writing "I have an appointment at
+          3pm July 31st" I will be awared of the it during the call. This is to
+          show how customizable this service is.
+        </span>
+      </label>
     </form>
   );
 }
@@ -401,7 +544,7 @@ function LeftPanel({ auth }: { auth: Auth | null }) {
           <ul>
             <li class="list-item"> Do you hate picking up the phone?</li>
             <li class="list-item">
-              Are you busy having tens of phone calls a day?
+              Are you busy with hundreds of phone calls a day?
             </li>
             <li class="list-item">
               {" "}
@@ -413,7 +556,14 @@ function LeftPanel({ auth }: { auth: Auth | null }) {
             see what happens. 👀
           </p>
         </div>
-      ) : null}
+      ) : (
+        <p class="text-center">
+          Awaiting your call at
+          <a href={`tel:${Bun.env.PHONE_NUMBER}`} class="link link-secondary">
+            {Bun.env.PHONE_NUMBER}
+          </a>
+        </p>
+      )}
     </div>
   );
 }
