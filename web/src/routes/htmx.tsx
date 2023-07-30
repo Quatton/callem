@@ -18,26 +18,45 @@ export const htmxPlugin = (app: Elysia) =>
       html(
         <BaseHtml>
           <div class="h-screen grid place-content-center">
-            <div class="grid place-content-center sm:grid-rows-2 sm:grid-cols-2 grid-flow-col place-items-center gap-4">
-              <div class="text-center">
-                <h1 class="text-4xl font-bold">{siteConfig.title}</h1>
-                <p class="text-xl max-w-xs">{siteConfig.description}</p>
-              </div>
-              <div class="text-center max-w-sm space-y-4">
-                <ul>
-                  <li class="list-item"> Do you hate picking up the phone?</li>
-                  <li class="list-item">
-                    Are you busy having tens of phone calls a day?
-                  </li>
-                  <li class="list-item">
-                    {" "}
-                    Have you ever wished you could clone yourself?
-                  </li>
-                </ul>
+            <div class="grid place-content-center grid-cols-1 sm:grid-cols-2 min-h-96 place-items-center gap-4">
+              <div class="flex flex-col items-center justify-between gap-8 prose dark:prose-invert">
+                <div class="text-center">
+                  <h1>{siteConfig.title}</h1>
+                  <h3 class="max-w-xs">{siteConfig.description}</h3>
+                </div>
+                <button
+                  class={`btn ${!auth ? "btn-disabled" : "btn-accent"}`}
+                  disabled={!auth ? "true" : "false"}
+                >
+                  Connect & Call
+                </button>
+                <div class="w-96 max-w-full space-y-4">
+                  <ul>
+                    <li class="list-item">
+                      {" "}
+                      Do you hate picking up the phone?
+                    </li>
+                    <li class="list-item">
+                      Are you busy having tens of phone calls a day?
+                    </li>
+                    <li class="list-item">
+                      {" "}
+                      Have you ever wished you could clone yourself?
+                    </li>
+                  </ul>
+                  <p>
+                    Well, although I can't clone your voice (yet), try calling
+                    me and see what happens. 👀
+                  </p>
+                </div>
               </div>
               <div class="row-span-2">
                 {!auth ? (
-                  <form hx-post="/verify-phone">
+                  <form hx-post="/verify-phone" class="form-control gap-2">
+                    <p>
+                      Oops, you're not logged in. Please verify your phone
+                      number.
+                    </p>
                     <input
                       type="phone"
                       name="phone"
@@ -54,16 +73,6 @@ export const htmxPlugin = (app: Elysia) =>
                     <h1 class="text-4xl font-bold">Welcome</h1>
                     <p class="text-xl max-w-xs">You are logged in as</p>
                     <p class="text-xl max-w-xs">{auth.phone}</p>
-
-                    <span>
-                      Awaiting your call at:{" "}
-                      <a
-                        href={`tel:${Bun.env.PHONE_NUMBER}`}
-                        class="link link-secondary"
-                      >
-                        {Bun.env.PHONE_NUMBER}
-                      </a>
-                    </span>
 
                     <p>
                       Optionally, you can ask us to send you the call summary
@@ -121,7 +130,6 @@ export const htmxPlugin = (app: Elysia) =>
             .padStart(6, "0");
 
           phoneCodes.set(phone, code.toString());
-
           phoneCodes = new Map(phoneCodes);
 
           try {
@@ -133,17 +141,21 @@ export const htmxPlugin = (app: Elysia) =>
 
             console.log("Sent!");
           } catch (e) {
-            console.error(e);
             redirectToError({
               set,
               code: "PHONE_CODE_ERROR",
-              message: "Something went wrong with Twilio",
+              message: "Cannot send the code to" + phone,
             });
+            return;
           }
         }
 
         return html(
-          <form hx-post="/verify-code">
+          <form
+            hx-post="/verify-code"
+            class="form-control gap-2"
+            hx-target="html"
+          >
             <input
               type="hidden"
               name="phone"
@@ -177,7 +189,15 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/change-email",
-      async ({ body, html, auth, set, jwt, setCookie }) => {
+      async ({
+        body,
+        html,
+        auth,
+        set,
+        jwt,
+        setCookie,
+        store: { loggedInUsers },
+      }) => {
         const email = body.email;
 
         if (!auth) {
@@ -191,6 +211,9 @@ export const htmxPlugin = (app: Elysia) =>
         }
 
         const newToken = await jwt.sign({ phone: auth.phone, email });
+
+        loggedInUsers.set(newToken, { phone: auth.phone, email });
+        loggedInUsers = new Map(loggedInUsers);
 
         setCookie("auth_session", newToken, {
           httpOnly: true,
@@ -210,7 +233,13 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/verify-code",
-      async ({ body, store: { phoneCodes }, set, setCookie, jwt }) => {
+      async ({
+        body,
+        store: { phoneCodes, loggedInUsers },
+        set,
+        setCookie,
+        jwt,
+      }) => {
         const phone = body.phone;
         const code = body.code;
         const email = body.email;
@@ -219,11 +248,17 @@ export const htmxPlugin = (app: Elysia) =>
         if (already) {
           if (already === code) {
             phoneCodes.delete(phone);
-            setCookie("auth_session", await jwt.sign({ phone, email }), {
+            phoneCodes = new Map(phoneCodes);
+            const token = await jwt.sign({ phone, email });
+            loggedInUsers.set(token, { phone, email });
+            loggedInUsers = new Map(loggedInUsers);
+
+            setCookie("auth_session", token, {
               httpOnly: true,
               maxAge: 7 * 86400,
             });
-            return;
+
+            set.redirect = "/";
           } else {
             redirectToError({
               set,
@@ -248,10 +283,19 @@ export const htmxPlugin = (app: Elysia) =>
       }
     );
 
-const authMiddleware = (app: Elysia) =>
+export const authMiddleware = (app: Elysia) =>
   app
     .state("phoneCodes", new Map<string, string>())
-
+    .state(
+      "loggedInUsers",
+      new Map<
+        string,
+        {
+          phone: string;
+          email?: string;
+        }
+      >()
+    )
     .derive(() => ({
       twilio: new Twilio.Twilio(
         Bun.env.TWILIO_ACCOUNT_SID,
@@ -269,10 +313,15 @@ const authMiddleware = (app: Elysia) =>
         }),
       })
     )
-    .derive(async ({ cookie, jwt, removeCookie }) => {
+    .derive(async ({ cookie, jwt, removeCookie, store: { loggedInUsers } }) => {
       const auth = cookie.auth_session;
+      const serverSyncedUser = loggedInUsers.get(auth);
 
       if (!auth) {
+        if (serverSyncedUser) {
+          loggedInUsers.delete(auth);
+          loggedInUsers = new Map(loggedInUsers);
+        }
         return {
           auth: null,
         };
@@ -280,7 +329,7 @@ const authMiddleware = (app: Elysia) =>
 
       const isOk = await jwt.verify(auth);
 
-      if (isOk === false) {
+      if (isOk === false || !serverSyncedUser) {
         removeCookie("auth_session");
         return {
           auth: null,

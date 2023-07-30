@@ -7,23 +7,13 @@ import { Conversation } from "../types/convo";
 import { twilioCallStatusBody, twilioRequestBody } from "../types/twilio";
 import { createChatCompletion } from "../utils/openai";
 import { textToSpeechStream, toTempFile } from "../utils/xi";
+import { authMiddleware } from "./htmx";
 
 export const twilioPlugin = (app: Elysia) =>
   app
     .use(ws())
     .use(cookie())
-    .model(
-      "audio-stream-header",
-      t.Object({
-        "x-call-sid": t.String(),
-      })
-    )
-    .model(
-      "audio-stream-body",
-      t.Object({
-        text: t.String(),
-      })
-    )
+    .use(authMiddleware)
     .onParse(async ({ request }, contentType) => {
       if (contentType === "application/xml") {
         const xml = await request.text();
