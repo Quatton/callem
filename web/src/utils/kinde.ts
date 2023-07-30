@@ -104,3 +104,28 @@ export async function getUserAccessToken(code: string) {
 
   return data;
 }
+
+export async function getUserInfo(accessToken: string) {
+  const response = await fetch(`${options.domain}/oauth2/v2/user_profile`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to get user info");
+  }
+
+  const data = (await response.json()) as {
+    sub: string;
+    email: string;
+    email_verified: boolean;
+    name: string;
+    given_name: string;
+    family_name: string;
+    picture: string;
+    locale: string;
+  };
+
+  return data;
+}

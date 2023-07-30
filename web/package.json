@@ -12,6 +12,7 @@
   "dependencies": {
     "@elysiajs/cookie": "^0.5.2",
     "@elysiajs/html": "^0.5.2",
+    "@elysiajs/jwt": "^0.5.3",
     "@elysiajs/static": "^0.5.3",
     "@kinde-oss/kinde-nodejs-sdk": "^1.2.2",
     "@tailwindcss/typography": "^0.5.9",
