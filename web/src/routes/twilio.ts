@@ -270,14 +270,18 @@ export const twilioPlugin = (app: Elysia) =>
           return twiml.toString();
         }
 
-        const { data: correctedMessageRaw } = await createCorrection(
-          messages,
-          {
-            role: "user",
-            content: voiceInput,
-          },
-          user.metadata
-        );
+        const correctedMessageRaw = null as {
+          content: string;
+        } | null;
+
+        // const { data: correctedMessageRaw } = await createCorrection(
+        //   messages,
+        //   {
+        //     role: "user",
+        //     content: voiceInput,
+        //   },
+        //   user.metadata
+        // );
 
         const correctedMessage = correctedMessageRaw
           ? correctedMessageRaw.content

@@ -4,7 +4,7 @@
 #
 
 app = "callem"
-primary_region = "nrt"
+primary_region = "ord"
 
 [http_service]
 internal_port = 3000

@@ -8,7 +8,7 @@ import Twilio from "twilio";
 import { isWithinExpiration, redirectToError } from "../utils/auth";
 import cookie from "@elysiajs/cookie";
 import jwt from "@elysiajs/jwt";
-import { phoneCodes, type Auth, verifiedUser } from "../db/schema";
+import { type Auth, verifiedUser } from "../db/schema";
 import { dbPlugin } from "../db/dbPlugin";
 import { eq } from "drizzle-orm";
 
@@ -124,33 +124,15 @@ export const htmxPlugin = (app: Elysia) =>
         });
 
         if (!already || !isWithinExpiration(already.expires)) {
-          const code = Math.floor(Math.random() * 1000000)
-            .toString()
-            .padStart(6, "0");
-
           try {
-            await twilio.messages.create({
-              from: Bun.env.PHONE_NUMBER,
-              to: phone,
-              body: `Your verification code is ${code}`,
-            });
-            const expires = new Date(Date.now() + 5 * 60 * 1000);
-            await db
-              .insert(phoneCodes)
-              .values({
-                phone,
-                code,
-                expires,
-              })
-              .onConflictDoUpdate({
-                target: phoneCodes.phone,
-                set: {
-                  code,
-                  expires,
-                },
-              })
-              .run();
+            await twilio.verify.v2
+              .services(Bun.env.TWILIO_VERIFY_SERVICE_SID!)
+              .verifications.create({
+                to: phone,
+                channel: "sms",
+              });
           } catch (e) {
+            console.log(e);
             redirectToError({
               set,
               code: "PHONE_CODE_ERROR",
@@ -296,65 +278,58 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/verify-code",
-      async ({ body, db, set, setCookie, authJwt }) => {
+      async ({ body, db, set, setCookie, authJwt, twilio }) => {
         const phone = body.phone;
         const code = body.code;
         const email = body.email;
 
-        const already = await db
-          .delete(phoneCodes)
-          .where(eq(phoneCodes.phone, phone))
-          .returning()
-          .get();
+        try {
+          const { status } = await twilio.verify.v2
+            .services(Bun.env.TWILIO_VERIFY_SERVICE_SID!)
+            .verificationChecks.create({
+              to: phone,
+              code,
+            });
 
-        if (already && isWithinExpiration(already.expires)) {
-          const alreadyCode = already.code;
-          if (alreadyCode === code) {
-            const user = await db
-              .insert(verifiedUser)
-              .values({ phone, email })
-              .onConflictDoUpdate({
-                target: verifiedUser.phone,
-                set: {
-                  email: email,
-                },
-              })
-              .returning()
-              .get();
+          if (status !== "approved") {
+            throw new Error("Invalid code");
+          }
 
-            if (!user) {
-              redirectToError({
-                set,
-                code: "CREATE_USER_ERROR",
-                message: "Cannot create a user",
-              });
-              return;
-            }
-
-            const token = await authJwt.sign({
+          const user = await db
+            .insert(verifiedUser)
+            .values({
               phone,
               email: email || null,
-              metadata: user.metadata,
-            });
-            setCookie("auth_session", token, {
-              httpOnly: true,
-              maxAge: 7 * 86400,
-            });
+            })
+            .onConflictDoUpdate({
+              target: verifiedUser.phone,
+              set: {
+                email: email || null,
+              },
+            })
+            .returning()
+            .get();
 
-            set.redirect = "/";
-          } else {
-            redirectToError({
-              set,
-              code: "PHONE_CODE_ERROR",
-              message: "The code is incorrect",
-            });
-          }
-        } else {
+          const token = await authJwt.sign({
+            phone,
+            email: email || null,
+            metadata: user.metadata,
+          });
+
+          setCookie("auth_session", token, {
+            httpOnly: true,
+            maxAge: 7 * 86400,
+          });
+
+          set.redirect = "/";
+        } catch (e) {
+          console.log(e);
           redirectToError({
             set,
             code: "PHONE_CODE_ERROR",
-            message: "The code is incorrect",
+            message: "The code is not valid",
           });
+          return;
         }
       },
       {
@@ -477,7 +452,7 @@ function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
   return (
     <form hx-post="/change-metadata" class="form-control self-stretch">
       <label for="change-metadata-input" class="label">
-        <span class="label-text">Metadata</span>
+        <span class="label-text">Caller's info</span>
       </label>
       <div class="input-group input-group-vertical">
         <textarea

@@ -15,19 +15,19 @@ const speechRefinerPrompt = (messageToCorrect: string, userMetaData: string) =>
 I am an assistant that will help correct mistakes in a speech transcription.
 I am very good at reading the context of the conversation and will be able to correct mistakes even if the pronunciation is not perfect.
 
-[INSTRUCTION]
-Please correct the mistakes in the following user's speech transcription.
-Look for any suspicious misconnections or missing words, and fill them out.
-
 [CAUTION]
 Do not paraphrase the speech. Keep the original meaning and structure of the speech as is.
 Generate only the message without your thought process.
 
-[TRANSCRIPTION TO CORRECT]
-${messageToCorrect}
-
 [USER'S PERSONAL INFO]
 ${userMetaData}
+
+[INSTRUCTION]
+Please correct the mistakes in the following user's speech transcription.
+Look for any suspicious misconnections or missing words, and fill them out.
+
+[USER SAID]
+${messageToCorrect}
 `.trim();
 
 const conversationPrompt = (
@@ -291,6 +291,7 @@ export async function createCorrection(
           role: "system",
           content: speechRefinerPrompt(messageToCorrect.content, userMetadata),
         },
+        messageToCorrect,
       ],
     });
 
