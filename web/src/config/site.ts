@@ -1,6 +1,6 @@
 export const siteConfig = {
   title: "Call'em",
   description:
-    "Forward the calls to your own clone",
+    "Forward your calls to your clones",
   phone: Bun.env.PHONE_NUMBER,
 };
