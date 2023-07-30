@@ -5,11 +5,16 @@ import { unlinkSync } from "fs";
 import Twilio from "twilio";
 import { Conversation } from "../types/convo";
 import { twilioCallStatusBody, twilioRequestBody } from "../types/twilio";
-import { createChatCompletion, createCorrection } from "../utils/openai";
+import {
+  createCallSummary,
+  createChatCompletion,
+  createCorrection,
+} from "../utils/openai";
 import { textToSpeechStream } from "../utils/xi";
 import { authMiddleware } from "./htmx";
 import jwt from "@elysiajs/jwt";
 import { dbPlugin } from "../db/dbPlugin";
+import { sendCallSummary } from "../utils/resend";
 
 export const twilioPlugin = (app: Elysia) =>
   app
@@ -80,10 +85,30 @@ export const twilioPlugin = (app: Elysia) =>
     })
     .post(
       "/call-status",
-      async ({ body }) => {
+      async ({ body, db, convo }) => {
         if (body.CallStatus === "completed") {
           const file = Bun.file(`./audio/${body.CallSid}.mp3`);
           if (await file.exists()) unlinkSync(`./audio/${body.CallSid}.mp3`);
+
+          const From = body.From;
+
+          const user = await db.query.verifiedUser.findFirst({
+            where: ({ phone }, { eq }) => eq(phone, From),
+          });
+
+          if (!user || !user.email || user.doNotSendEmail) {
+            return;
+          }
+
+          const { email } = user;
+
+          const { data: summary } = await createCallSummary(convo.messages);
+
+          await sendCallSummary(
+            summary ?? "We were unable to generate a summary for this call.",
+            From,
+            email
+          );
         }
       },
       {
