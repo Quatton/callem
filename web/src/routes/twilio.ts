@@ -9,12 +9,14 @@ import { createChatCompletion, createCorrection } from "../utils/openai";
 import { textToSpeechStream } from "../utils/xi";
 import { authMiddleware } from "./htmx";
 import jwt from "@elysiajs/jwt";
+import { dbPlugin } from "../db/dbPlugin";
 
 export const twilioPlugin = (app: Elysia) =>
   app
     .use(ws())
     .use(cookie())
     .use(authMiddleware)
+    .use(dbPlugin)
     .use(
       jwt({
         secret: process.env.AUTH_SECRET!,
@@ -46,7 +48,6 @@ export const twilioPlugin = (app: Elysia) =>
     }))
     .derive(({ cookie }) => {
       const convo = cookie.convo;
-      console.log(convo);
       try {
         return {
           convo: JSON.parse(convo) as Conversation,
@@ -136,7 +137,20 @@ export const twilioPlugin = (app: Elysia) =>
     })
     .post(
       "/transcribe",
-      async ({ body, twiml, set, convo, setConvo, playJwt }) => {
+      async ({ body, twiml, set, convo, setConvo, playJwt, db }) => {
+        const { From } = body;
+
+        const user = await db.query.verifiedUser.findFirst({
+          where: ({ phone }, { eq }) => eq(phone, From),
+        });
+
+        if (!user) {
+          twiml.reject({
+            reason: "rejected",
+          });
+          return twiml.toString();
+        }
+
         set.headers = {
           "Content-Type": "application/xml",
         };
@@ -202,13 +216,22 @@ export const twilioPlugin = (app: Elysia) =>
     )
     .post(
       "/respond",
-      async ({ twiml, body, set, convo, playJwt, setConvo }) => {
+      async ({ twiml, body, set, convo, playJwt, setConvo, db }) => {
         const voiceInput = body.SpeechResult;
         const messages = convo.messages;
 
-        // const correctedMessageRaw = null as Awaited<
-        //   ReturnType<typeof createCorrection>
-        // >["data"];
+        const { From } = body;
+
+        const user = await db.query.verifiedUser.findFirst({
+          where: ({ phone }, { eq }) => eq(phone, From),
+        });
+
+        if (!user) {
+          twiml.reject({
+            reason: "rejected",
+          });
+          return twiml.toString();
+        }
 
         const { data: correctedMessageRaw } = await createCorrection(messages, {
           role: "user",

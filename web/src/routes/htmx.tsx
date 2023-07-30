@@ -5,52 +5,26 @@ import { BaseHtml } from "../components/baseHtml";
 import * as elements from "typed-html";
 import { siteConfig } from "../config/site";
 import Twilio from "twilio";
-import { redirectToError } from "../utils/kinde";
+import { isWithinExpiration, redirectToError } from "../utils/auth";
 import cookie from "@elysiajs/cookie";
 import jwt from "@elysiajs/jwt";
+import { phoneCodes, type Auth, verifiedUser } from "../db/schema";
+import { dbPlugin } from "../db/dbPlugin";
+import { eq } from "drizzle-orm";
 
 export const htmxPlugin = (app: Elysia) =>
   app
     .use(html())
     .use(authMiddleware)
+    .use(dbPlugin)
     .get("/favicon.ico", () => Bun.file("./src/assets/favicon.ico"))
     .get("/", ({ html, auth }) =>
       html(
         <BaseHtml>
-          <div class="h-screen grid place-content-center">
+          <div class="min-h-screen grid place-content-center py-8">
             <div class="grid place-content-center grid-cols-1 sm:grid-cols-2 min-h-96 place-items-center gap-4">
-              <div class="flex flex-col items-center justify-between gap-8 prose dark:prose-invert">
-                <div class="text-center">
-                  <h1>{siteConfig.title}</h1>
-                  <h3 class="max-w-xs">{siteConfig.description}</h3>
-                </div>
-                <button
-                  class={`btn ${!auth ? "btn-disabled" : "btn-accent"}`}
-                  disabled={!auth ? "true" : "false"}
-                >
-                  Connect & Call
-                </button>
-                <div class="w-96 max-w-full space-y-4">
-                  <ul>
-                    <li class="list-item">
-                      {" "}
-                      Do you hate picking up the phone?
-                    </li>
-                    <li class="list-item">
-                      Are you busy having tens of phone calls a day?
-                    </li>
-                    <li class="list-item">
-                      {" "}
-                      Have you ever wished you could clone yourself?
-                    </li>
-                  </ul>
-                  <p>
-                    Well, although I can't clone your voice (yet), try calling
-                    me and see what happens. 👀
-                  </p>
-                </div>
-              </div>
-              <div class="row-span-2">
+              <LeftPanel auth={auth} />
+              <div>
                 {!auth ? (
                   <form hx-post="/verify-phone" class="form-control gap-2">
                     <p>
@@ -71,8 +45,23 @@ export const htmxPlugin = (app: Elysia) =>
                 ) : (
                   <div class="text-center flex flex-col items-center gap-4">
                     <h1 class="text-4xl font-bold">Welcome</h1>
-                    <p class="text-xl max-w-xs">You are logged in as</p>
-                    <p class="text-xl max-w-xs">{auth.phone}</p>
+                    <span class="space-x-1">
+                      <span class="text-xl max-w-xs">You are logged in as</span>
+                      <span class="text-xl max-w-xs">{auth.phone}</span>
+                      <a href="/logout" class="btn btn-error">
+                        Logout
+                      </a>
+                    </span>
+
+                    <p>
+                      Awaiting your call at
+                      <a
+                        href={`tel:${Bun.env.PHONE_NUMBER}`}
+                        class="link link-secondary"
+                      >
+                        {Bun.env.PHONE_NUMBER}
+                      </a>
+                    </p>
 
                     <p>
                       Optionally, you can ask us to send you the call summary
@@ -93,7 +82,7 @@ export const htmxPlugin = (app: Elysia) =>
       ({ html, query: { code, message, redirectTo } }) =>
         html(
           <BaseHtml>
-            <div class="grid place-content-center place-items-center gap-4 h-screen">
+            <div class="grid place-content-center place-items-center gap-4 min-h-screen">
               <div class="text-center">
                 <h1 class="text-4xl font-bold">{code}</h1>
                 <p class="text-xl max-w-xs">{message}</p>
@@ -121,16 +110,16 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/verify-phone",
-      async ({ body, twilio, store: { phoneCodes }, set, html }) => {
+      async ({ body, twilio, db, set, html }) => {
         const phone = body.phone;
-        const already = phoneCodes.get(phone);
-        if (!already) {
+        const already = await db.query.phoneCodes.findFirst({
+          where: (phoneCode, { eq }) => eq(phoneCode.phone, phone),
+        });
+
+        if (!already || !isWithinExpiration(already.expires)) {
           const code = Math.floor(Math.random() * 1000000)
             .toString()
             .padStart(6, "0");
-
-          phoneCodes.set(phone, code.toString());
-          phoneCodes = new Map(phoneCodes);
 
           try {
             await twilio.messages.create({
@@ -138,8 +127,22 @@ export const htmxPlugin = (app: Elysia) =>
               to: phone,
               body: `Your verification code is ${code}`,
             });
-
-            console.log("Sent!");
+            const expires = new Date(Date.now() + 5 * 60 * 1000);
+            await db
+              .insert(phoneCodes)
+              .values({
+                phone,
+                code,
+                expires,
+              })
+              .onConflictDoUpdate({
+                target: phoneCodes.phone,
+                set: {
+                  code,
+                  expires,
+                },
+              })
+              .run();
           } catch (e) {
             redirectToError({
               set,
@@ -151,11 +154,7 @@ export const htmxPlugin = (app: Elysia) =>
         }
 
         return html(
-          <form
-            hx-post="/verify-code"
-            class="form-control gap-2"
-            hx-target="html"
-          >
+          <form action="/verify-code" method="POST" class="form-control gap-2">
             <input
               type="hidden"
               name="phone"
@@ -189,15 +188,7 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/change-email",
-      async ({
-        body,
-        html,
-        auth,
-        set,
-        jwt,
-        setCookie,
-        store: { loggedInUsers },
-      }) => {
+      async ({ body, html, auth, set, authJwt, setCookie }) => {
         const email = body.email;
 
         if (!auth) {
@@ -210,10 +201,7 @@ export const htmxPlugin = (app: Elysia) =>
           return;
         }
 
-        const newToken = await jwt.sign({ phone: auth.phone, email });
-
-        loggedInUsers.set(newToken, { phone: auth.phone, email });
-        loggedInUsers = new Map(loggedInUsers);
+        const newToken = await authJwt.sign({ phone: auth.phone, email });
 
         setCookie("auth_session", newToken, {
           httpOnly: true,
@@ -233,26 +221,42 @@ export const htmxPlugin = (app: Elysia) =>
     )
     .post(
       "/verify-code",
-      async ({
-        body,
-        store: { phoneCodes, loggedInUsers },
-        set,
-        setCookie,
-        jwt,
-      }) => {
+      async ({ body, db, set, setCookie, authJwt }) => {
         const phone = body.phone;
         const code = body.code;
         const email = body.email;
 
-        const already = phoneCodes.get(phone);
-        if (already) {
-          if (already === code) {
-            phoneCodes.delete(phone);
-            phoneCodes = new Map(phoneCodes);
-            const token = await jwt.sign({ phone, email });
-            loggedInUsers.set(token, { phone, email });
-            loggedInUsers = new Map(loggedInUsers);
+        const already = await db
+          .delete(phoneCodes)
+          .where(eq(phoneCodes.phone, phone))
+          .returning()
+          .get();
 
+        if (already && isWithinExpiration(already.expires)) {
+          const alreadyCode = already.code;
+          if (alreadyCode === code) {
+            const user = await db
+              .insert(verifiedUser)
+              .values({ phone, email })
+              .onConflictDoUpdate({
+                target: verifiedUser.phone,
+                set: {
+                  email: email,
+                },
+              })
+              .returning()
+              .get();
+
+            if (!user) {
+              redirectToError({
+                set,
+                code: "CREATE_USER_ERROR",
+                message: "Cannot create a user",
+              });
+              return;
+            }
+
+            const token = await authJwt.sign({ phone, email: email || null });
             setCookie("auth_session", token, {
               httpOnly: true,
               maxAge: 7 * 86400,
@@ -281,21 +285,32 @@ export const htmxPlugin = (app: Elysia) =>
           email: t.Optional(t.String()),
         }),
       }
-    );
+    )
+    .get("/logout", ({ set, removeCookie }) => {
+      removeCookie("auth_session");
+      set.redirect = "/";
+    })
+    .get("/connect", ({ auth, html }) => {
+      if (!auth) {
+        return html(<LeftPanel auth={auth} />);
+      }
+
+      return html(
+        <div hx-ext="ws" ws-connect="/stream">
+          <div hx-swap-oop="true" id="notification">
+            New message
+          </div>
+          <form class="form-control" ws-send>
+            <input type="text" name="message" class="input input-secondary" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      );
+    });
 
 export const authMiddleware = (app: Elysia) =>
   app
-    .state("phoneCodes", new Map<string, string>())
-    .state(
-      "loggedInUsers",
-      new Map<
-        string,
-        {
-          phone: string;
-          email?: string;
-        }
-      >()
-    )
+    .use(dbPlugin)
     .derive(() => ({
       twilio: new Twilio.Twilio(
         Bun.env.TWILIO_ACCOUNT_SID,
@@ -305,46 +320,49 @@ export const authMiddleware = (app: Elysia) =>
     .use(cookie())
     .use(
       jwt({
-        name: "jwt",
+        name: "authJwt",
         secret: Bun.env.AUTH_SECRET!,
         schema: t.Object({
           phone: t.String(),
-          email: t.Optional(t.String()),
+          email: t.Union([t.String(), t.Null()], {
+            default: null,
+          }),
         }),
       })
     )
-    .derive(async ({ cookie, jwt, removeCookie, store: { loggedInUsers } }) => {
-      const auth = cookie.auth_session;
-      const serverSyncedUser = loggedInUsers.get(auth);
+    .derive(
+      async ({
+        cookie,
+        authJwt,
+        removeCookie,
+      }): Promise<{ auth: Auth | null }> => {
+        const auth = cookie.auth_session;
 
-      if (!auth) {
-        if (serverSyncedUser) {
-          loggedInUsers.delete(auth);
-          loggedInUsers = new Map(loggedInUsers);
+        if (!auth) {
+          return {
+            auth: null,
+          };
         }
+
+        const isOk = await authJwt.verify(auth);
+
+        if (isOk === false) {
+          removeCookie("auth_session");
+          return {
+            auth: null,
+          };
+        }
+
         return {
-          auth: null,
+          auth: {
+            phone: isOk.phone,
+            email: isOk.email,
+          },
         };
       }
+    );
 
-      const isOk = await jwt.verify(auth);
-
-      if (isOk === false || !serverSyncedUser) {
-        removeCookie("auth_session");
-        return {
-          auth: null,
-        };
-      }
-
-      return {
-        auth: {
-          phone: isOk.phone,
-          email: isOk.email,
-        },
-      };
-    });
-
-function ChangeEmailForm({ email = "" }: { email?: string }) {
+function ChangeEmailForm({ email = "" }: { email: string | null }) {
   return (
     <form hx-post="/change-email" class="form-control gap-2">
       <label for="change-email-input" class="label">
@@ -356,11 +374,46 @@ function ChangeEmailForm({ email = "" }: { email?: string }) {
         name="email"
         class="input input-primary"
         placeholder="Email (Optional)"
-        value={email}
+        value={email ?? ""}
       />
       <button type="submit" class="btn btn-primary">
         Change
       </button>
     </form>
+  );
+}
+
+function LeftPanel({ auth }: { auth: Auth | null }) {
+  return (
+    <div
+      class="flex flex-col items-center justify-between gap-8 prose dark:prose-invert"
+      id="left-panel"
+    >
+      <div class="text-center">
+        <h1>{siteConfig.title}</h1>
+        <h3 class="max-w-xs">{siteConfig.description}</h3>
+      </div>
+      <button class={`btn btn-disabled`} disabled="true">
+        Call me (Coming soon)
+      </button>
+      {!auth ? (
+        <div class="w-96 max-w-full space-y-4">
+          <ul>
+            <li class="list-item"> Do you hate picking up the phone?</li>
+            <li class="list-item">
+              Are you busy having tens of phone calls a day?
+            </li>
+            <li class="list-item">
+              {" "}
+              Have you ever wished you could clone yourself?
+            </li>
+          </ul>
+          <p>
+            Well, although I can't clone your voice (yet), try calling me and
+            see what happens. 👀
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }

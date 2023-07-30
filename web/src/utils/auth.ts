@@ -129,3 +129,7 @@ export async function getUserInfo(accessToken: string) {
 
   return data;
 }
+
+export function isWithinExpiration(expires: Date) {
+  return new Date().getTime() < expires.getTime();
+}

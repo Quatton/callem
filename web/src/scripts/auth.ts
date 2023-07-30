@@ -1,6 +1,14 @@
-import { generateRandomString } from "../utils/kinde";
+import { db } from "../db";
+import { phoneCodes } from "../db/schema";
 
-console.log(generateRandomString(1));
-console.log(generateRandomString(9).length);
-console.log(generateRandomString(10).length);
-console.log(generateRandomString(101).length);
+const phone = "+818038565554";
+const code = "616348";
+
+await db
+  .insert(phoneCodes)
+  .values({
+    phone,
+    code,
+    expires: new Date(Date.now() + 5 * 60 * 1000),
+  })
+  .run();
