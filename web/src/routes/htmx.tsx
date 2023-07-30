@@ -508,8 +508,8 @@ function LeftPanel({ auth }: { auth: Auth | null }) {
       id="left-panel"
     >
       <div class="text-center">
-        <h1>{siteConfig.title}</h1>
-        <h3 class="max-w-xs">{siteConfig.description}</h3>
+        <h1 class="text-accent">{siteConfig.title}</h1>
+        <h3 class="text-accent-content">{siteConfig.description}</h3>
       </div>
       <button class={`btn btn-disabled`} disabled="true">
         Call me (Coming soon)
