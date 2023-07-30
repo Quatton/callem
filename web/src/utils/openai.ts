@@ -9,7 +9,8 @@ export type Conversation = {
   messages: ChatCompletionRequestMessage[];
 };
 
-const speechRefinerPrompt = `
+const speechRefinerPrompt = (messageToCorrect: string) =>
+  `
 [CONTEXT]
 I am an assistant that will help correct mistakes in a speech transcription.
 I am very good at reading the context of the conversation and will be able to correct mistakes even if the pronunciation is not perfect.
@@ -21,6 +22,9 @@ Look for any suspicious misconnections or missing words, and fill them out.
 [CAUTION]
 Do not paraphrase the speech. Keep the original meaning and structure of the speech as is.
 Generate only the message without your thought process.
+
+[TRANSCRIPTION TO CORRECT]
+${messageToCorrect}
 `.trim();
 
 const conversationPrompt = (today: Date) =>
@@ -259,7 +263,13 @@ export async function createCorrection(
   try {
     const correctedMessage = await openai.createChatCompletion({
       model: "gpt-3.5-turbo",
-      messages: [...history, messageToCorrect],
+      messages: [
+        ...history,
+        {
+          role: "system",
+          content: speechRefinerPrompt(messageToCorrect.content),
+        },
+      ],
     });
 
     if (correctedMessage.status === 500) {

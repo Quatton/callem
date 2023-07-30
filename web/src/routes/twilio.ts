@@ -202,18 +202,18 @@ export const twilioPlugin = (app: Elysia) =>
     )
     .post(
       "/respond",
-      async ({ twiml, body, set, convo, setCookie, playJwt, setConvo }) => {
+      async ({ twiml, body, set, convo, playJwt, setConvo }) => {
         const voiceInput = body.SpeechResult;
         const messages = convo.messages;
 
-        const correctedMessageRaw = null as Awaited<
-          ReturnType<typeof createCorrection>
-        >["data"];
+        // const correctedMessageRaw = null as Awaited<
+        //   ReturnType<typeof createCorrection>
+        // >["data"];
 
-        // const { data: correctedMessageRaw } = await createCorrection(messages, {
-        //   role: "user",
-        //   content: voiceInput,
-        // });
+        const { data: correctedMessageRaw } = await createCorrection(messages, {
+          role: "user",
+          content: voiceInput,
+        });
 
         const correctedMessage = correctedMessageRaw
           ? correctedMessageRaw.content
