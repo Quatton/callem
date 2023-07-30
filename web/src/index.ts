@@ -15,7 +15,7 @@ const app = new Elysia()
     console.error(error);
     return error.message;
   })
-  .group("/twilio", twilioPlugin)
+  .use(twilioPlugin)
   .use(htmxPlugin)
   .listen(3000);
 

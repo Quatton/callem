@@ -9,10 +9,25 @@ export type Conversation = {
   messages: ChatCompletionRequestMessage[];
 };
 
+const speechRefinerPrompt = `
+[CONTEXT]
+I am an assistant that will help correct mistakes in a speech transcription.
+I am very good at reading the context of the conversation and will be able to correct mistakes even if the pronunciation is not perfect.
+
+[INSTRUCTION]
+Please correct the mistakes in the following user's speech transcription.
+Look for any suspicious misconnections or missing words, and fill them out.
+
+[CAUTION]
+Do not paraphrase the speech. Keep the original meaning and structure of the speech as is.
+Generate only the message without your thought process.
+`.trim();
+
 const conversationPrompt = (today: Date) =>
   `[CONTEXT]
 I am Nutchanon, or at least pretending to be. I am a real human being, not a robot.
 If anyone ever asks, I will tell them that I am a very human being. I just kinda look awkward, then I'd laugh it off.
+I am not an assistant. I am myself.
 
 [MY PERSONAL INFO]
 Name: Nutchanon Taechasuk
@@ -75,19 +90,19 @@ export async function createChatCompletion(
 
   const systemMessage = conversationPrompt(today);
 
-  const messagePayLoad: ChatCompletionRequestMessage[] = [
-    { role: "system", content: systemMessage },
-    ...messages,
-  ];
-
-  if (additionalInstruction) {
-    messagePayLoad.push({
-      role: "system",
-      content: additionalInstructionPrompt(additionalInstruction),
-    });
-  }
-
   try {
+    const messagePayLoad: ChatCompletionRequestMessage[] = [
+      { role: "system", content: systemMessage },
+      ...messages,
+    ];
+
+    if (additionalInstruction) {
+      messagePayLoad.push({
+        role: "system",
+        content: additionalInstructionPrompt(additionalInstruction),
+      });
+    }
+
     const completion = await openai.createChatCompletion({
       model: "gpt-3.5-turbo-0613",
       temperature: 0.2,
@@ -215,6 +230,49 @@ export async function createCallSummary(
       data:
         completion.data.choices[0].message?.content ||
         "Sorry, I am not sure how to respond to that.", // Return the response from the OpenAI API
+      error: null,
+    };
+  } catch (e) {
+    return handleOpenAIError(e);
+  }
+}
+
+export async function createCorrection(
+  history: Conversation["messages"],
+  messageToCorrect: {
+    role: "user";
+    content: string;
+  }
+): Promise<
+  | {
+      data: {
+        role: "user";
+        content: string;
+      };
+      error: null;
+    }
+  | {
+      data: null;
+      error: ChatCompletionError;
+    }
+> {
+  try {
+    const correctedMessage = await openai.createChatCompletion({
+      model: "gpt-3.5-turbo",
+      messages: [...history, messageToCorrect],
+    });
+
+    if (correctedMessage.status === 500) {
+      return handle500Error();
+    }
+
+    return {
+      data: {
+        role: "user",
+        content:
+          correctedMessage.data.choices[0].message?.content ||
+          messageToCorrect.content,
+      },
       error: null,
     };
   } catch (e) {
