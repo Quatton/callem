@@ -3,6 +3,7 @@
 ## Forward your calls to your clones
 
 Lablab.ai: ElevenLabs AI Hackathon July 2023
+
 Call'em, clone your voice and let an AI make those anxious, awkward phone calls for you. Every missed call is a lost opportunity.
 
 ## Motivation
@@ -18,3 +19,22 @@ Imagine customers losing their interest because you were busy in a call with ano
 - The [BETH](https://github.com/ethanniser/the-beth-stack) Stack
 - [ElevenLabs](https://elevenlabs.io/)
 - [Twilio](https://www.twilio.com/)
+
+## Future Work
+
+### Business Related
+
+- [ ] Twilio buy phone number API
+
+### Quailty of Life
+
+- [ ] Stuff related to metadata & database
+- [ ] WebSocket streaming calls
+- [ ] Expo & React Native to actually forward the calls
+
+### Performance & Stability
+
+- [ ] Stream to Twilio instead of downloading and playing the file
+- [ ] Figure out why Fly.io returns 502 Bad Gateway
+- [ ] Better Auth service
+- [ ] Better error handling
