@@ -311,7 +311,7 @@ export const htmxPlugin = (app: Elysia) =>
 
       const limit = await threeCallsLimit(auth.phone);
 
-      if (limit) {
+      if (limit === "limit") {
         // set.status = 429;
         return "Limited to 3 calls (sorry!)";
       }
