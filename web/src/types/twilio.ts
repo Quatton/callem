@@ -4,7 +4,7 @@ export const twilioRequestBody = t.Object({
   Called: t.String(),
   ToState: t.String(),
   CallerCountry: t.String(),
-  Direction: t.String(),
+  Direction: t.Union([t.Literal("inbound"), t.Literal("outbound-api")]),
   SpeechResult: t.String(),
   CallerState: t.String(),
   Language: t.String(),
@@ -16,7 +16,16 @@ export const twilioRequestBody = t.Object({
   ToCountry: t.String(),
   ApiVersion: t.String(),
   CalledZip: t.String(),
-  CallStatus: t.String(),
+  CallStatus: t.Union([
+    t.Literal("queued"),
+    t.Literal("ringing"),
+    t.Literal("in-progress"),
+    t.Literal("completed"),
+    t.Literal("busy"),
+    t.Literal("failed"),
+    t.Literal("canceled"),
+    t.Literal("no-answer"),
+  ]),
   CalledCity: t.String(),
   From: t.String(),
   AccountSid: t.String(),
@@ -35,7 +44,7 @@ export const twilioCallStatusBody = t.Object({
   Called: t.String(),
   ToState: t.String(),
   CallerCountry: t.String(),
-  Direction: t.String(),
+  Direction: t.Union([t.Literal("inbound"), t.Literal("outbound-api")]),
   Timestamp: t.String(),
   CallbackSource: t.String(),
   CallerState: t.String(),
@@ -47,7 +56,17 @@ export const twilioCallStatusBody = t.Object({
   CallerZip: t.String(),
   CalledZip: t.String(),
   ApiVersion: t.String(),
-  CallStatus: t.Union([t.Literal("completed"), t.String()]),
+  SipResponseCode: t.Optional(t.String()),
+  CallStatus: t.Union([
+    t.Literal("queued"),
+    t.Literal("ringing"),
+    t.Literal("in-progress"),
+    t.Literal("completed"),
+    t.Literal("busy"),
+    t.Literal("failed"),
+    t.Literal("canceled"),
+    t.Literal("no-answer"),
+  ]),
   CalledCity: t.String(),
   Duration: t.String(),
   From: t.String(),
@@ -68,7 +87,7 @@ export type TwilioRequestBody = {
   Called: string;
   ToState: string;
   CallerCountry: string;
-  Direction: string;
+  Direction: "inbound" | "outbound-api";
   SpeechResult: string;
   CallerState: string;
   Language: string;

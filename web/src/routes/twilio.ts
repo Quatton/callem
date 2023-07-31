@@ -1,7 +1,6 @@
 import cookie from "@elysiajs/cookie";
 import Elysia, { ws, t } from "elysia";
 import { XMLParser } from "fast-xml-parser";
-import { unlinkSync } from "fs";
 import Twilio from "twilio";
 import { Conversation } from "../types/convo";
 import {
@@ -19,6 +18,8 @@ import { authMiddleware } from "./htmx";
 import jwt from "@elysiajs/jwt";
 import { dbPlugin } from "../db/dbPlugin";
 import { sendCallSummary } from "../utils/resend";
+import { threeCallsLimit, verifyPhoneNumber } from "../utils/auth";
+import { calls } from "../db/schema";
 
 export const twilioPlugin = (app: Elysia) =>
   app
@@ -90,10 +91,8 @@ export const twilioPlugin = (app: Elysia) =>
     .post(
       "/call-status",
       async ({ body, db, convo }) => {
+        let callSummary = "";
         if (body.CallStatus === "completed") {
-          const file = Bun.file(`./audio/${body.CallSid}.mp3`);
-          if (await file.exists()) unlinkSync(`./audio/${body.CallSid}.mp3`);
-
           const From = body.From;
 
           const user = await db.query.verifiedUser.findFirst({
@@ -111,12 +110,33 @@ export const twilioPlugin = (app: Elysia) =>
             user.metadata
           );
 
-          await sendCallSummary(
-            summary ?? "We were unable to generate a summary for this call.",
-            From,
-            email
-          );
+          callSummary =
+            summary ?? "We were unable to generate a summary for this call.";
+
+          await sendCallSummary(callSummary, From, email);
         }
+
+        const today = new Date();
+        await db
+          .insert(calls)
+          .values({
+            createdAt: today,
+            updatedAt: today,
+            sid: body.CallSid,
+            status: body.CallStatus,
+            callSummary,
+            direction: body.Direction,
+            withPhone: body.Direction === "outbound-api" ? body.To : body.From,
+          })
+          .onConflictDoUpdate({
+            target: calls.sid,
+            set: {
+              callSummary,
+              status: body.CallStatus,
+              updatedAt: today,
+            },
+          })
+          .run();
       },
       {
         body: twilioCallStatusBody,
@@ -169,14 +189,19 @@ export const twilioPlugin = (app: Elysia) =>
     })
     .post(
       "/transcribe",
-      async ({ body, twiml, set, convo, setConvo, playJwt, db }) => {
-        const { From } = body;
+      async ({ body, twiml, set, convo, setConvo, playJwt }) => {
+        const { From, To, Direction } = body;
 
-        const user = await db.query.verifiedUser.findFirst({
-          where: ({ phone }, { eq }) => eq(phone, From),
+        const user = await verifyPhoneNumber({
+          From,
+          To,
+          Direction,
         });
 
-        if (!user) {
+        const limit: "limit" | "ok" =
+          Direction === "inbound" ? await threeCallsLimit(From) : "ok";
+
+        if (!user || limit === "limit") {
           twiml.reject({
             reason: "rejected",
           });
@@ -251,16 +276,17 @@ export const twilioPlugin = (app: Elysia) =>
         convo,
         playJwt,
         setConvo,
-        db,
         store: { serverMetadata },
       }) => {
         const voiceInput = body.SpeechResult;
         const messages = convo.messages;
 
-        const { From } = body;
+        const { From, To, Direction } = body;
 
-        const user = await db.query.verifiedUser.findFirst({
-          where: ({ phone }, { eq }) => eq(phone, From),
+        const user = await verifyPhoneNumber({
+          From,
+          To,
+          Direction,
         });
 
         if (!user) {

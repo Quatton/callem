@@ -1,6 +1,14 @@
-import { unlinkSync } from "fs";
+import { Twilio } from "twilio";
 
-// const transcribed = await textToSpeechStream("But what if I overwrite it?");
-// await toTempFile(transcribed, "test");
+const twilio = new Twilio(
+  Bun.env.TWILIO_ACCOUNT_SID,
+  Bun.env.TWILIO_AUTH_TOKEN
+);
 
-unlinkSync("./audio/CAe91d3fb0bfe033f1fa77403c67d67771.mp3");
+const call = await twilio.calls.create({
+  url: `https://${Bun.env.BASE_URL}/transcribe`,
+  to: "+818038565554",
+  from: Bun.env.PHONE_NUMBER!,
+});
+
+console.log(call.sid);

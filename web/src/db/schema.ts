@@ -10,6 +10,7 @@ export const verifiedUser = sqliteTable("verified_user", {
     .default(false)
     .notNull(),
   metadata: text("metadata").notNull().default(""),
+  serverMetadata: text("server_metadata").notNull().default(""),
 });
 
 export type VerifiedUser = InferModel<typeof verifiedUser>;
@@ -22,5 +23,36 @@ export const phoneCodes = sqliteTable("phone_codes", {
     mode: "timestamp_ms",
   }).notNull(),
 });
+
+export const calls = sqliteTable("calls", {
+  sid: text("sid").primaryKey(),
+  withPhone: text("with_phone")
+    .references(() => verifiedUser.phone)
+    .notNull(),
+  status: text("status", {
+    enum: [
+      "queued",
+      "ringing",
+      "in-progress",
+      "completed",
+      "busy",
+      "failed",
+      "canceled",
+      "no-answer",
+    ],
+  }).notNull(),
+  direction: text("direction", {
+    enum: ["inbound", "outbound-api"],
+  }).notNull(),
+  callSummary: text("call_summary").notNull().default(""),
+  createdAt: integer("created_at", {
+    mode: "timestamp_ms",
+  }).notNull(),
+  updatedAt: integer("updated_at", {
+    mode: "timestamp_ms",
+  }).notNull(),
+});
+
+export type Call = InferModel<typeof calls>;
 
 export type PhoneCode = InferModel<typeof phoneCodes>;

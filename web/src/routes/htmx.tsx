@@ -5,10 +5,16 @@ import { BaseHtml } from "../components/baseHtml";
 import * as elements from "typed-html";
 import { siteConfig } from "../config/site";
 import Twilio from "twilio";
-import { isWithinExpiration, redirectToError } from "../utils/auth";
+import {
+  canCallAgain,
+  canCallAgainButFromTwilio,
+  isWithinExpiration,
+  redirectToError,
+  threeCallsLimit,
+} from "../utils/auth";
 import cookie from "@elysiajs/cookie";
 import jwt from "@elysiajs/jwt";
-import { type Auth, verifiedUser } from "../db/schema";
+import { type Auth, verifiedUser, calls } from "../db/schema";
 import { dbPlugin } from "../db/dbPlugin";
 import { eq } from "drizzle-orm";
 
@@ -34,7 +40,11 @@ export const htmxPlugin = (app: Elysia) =>
                 <LeftPanel auth={auth} />
                 <div>
                   {!auth ? (
-                    <form hx-post="/verify-phone" class="form-control gap-2">
+                    <form
+                      hx-post="/verify-phone"
+                      class="form-control gap-2"
+                      data-loading-path="/verify-phone"
+                    >
                       <p>
                         Oops, you're not logged in. Please verify your phone
                         number.
@@ -46,7 +56,13 @@ export const htmxPlugin = (app: Elysia) =>
                         placeholder="Enter your phone number with the country code"
                         required="true"
                       />
-                      <button type="submit" class="btn btn-primary">
+                      <button
+                        type="submit"
+                        class="btn btn-primary"
+                        data-loading-disable
+                        data-loading-class-remove="btn-primary"
+                        data-loading-class="btn-disabled"
+                      >
                         Verify
                       </button>
                     </form>
@@ -143,7 +159,12 @@ export const htmxPlugin = (app: Elysia) =>
         }
 
         return html(
-          <form action="/verify-code" method="POST" class="form-control gap-2">
+          <form
+            action="/verify-code"
+            method="POST"
+            class="form-control gap-2"
+            data-loading-path="/verify-code"
+          >
             <input
               type="hidden"
               name="phone"
@@ -163,7 +184,13 @@ export const htmxPlugin = (app: Elysia) =>
               class="input input-primary"
               placeholder="Email (Optional)"
             />
-            <button type="submit" class="btn btn-primary">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              data-loading-class-remove="btn-primary"
+              data-loading-class="btn-disabled"
+              data-loading-disable
+            >
               Verify
             </button>
           </form>
@@ -276,6 +303,60 @@ export const htmxPlugin = (app: Elysia) =>
         }),
       }
     )
+    .post("/call-me", async ({ twilio, auth, set, db }) => {
+      if (!auth) {
+        set.status = 401;
+        return "UNAUTHORIZED";
+      }
+
+      const limit = await threeCallsLimit(auth.phone);
+
+      if (limit) {
+        // set.status = 429;
+        return "Limited to 3 calls (sorry!)";
+      }
+
+      const latestCall = await db.query.calls.findFirst({
+        where: (call, { eq, and }) => and(eq(call.withPhone, auth.phone)),
+        orderBy: (call, { desc }) => desc(call.createdAt),
+      });
+
+      if (latestCall && !canCallAgain(latestCall.status)) {
+        if (!(latestCall.status === "queued")) {
+          set.status = 429;
+          return "ALREADY_CALLED";
+        }
+        // sus
+
+        const secondCheck = await canCallAgainButFromTwilio(auth.phone);
+        if (!secondCheck) {
+          set.status = 429;
+          return "ALREADY_CALLED";
+        }
+      }
+
+      const call = await twilio.calls.create({
+        url: `https://${Bun.env.BASE_URL}/transcribe`,
+        to: "+818038565554",
+        from: Bun.env.PHONE_NUMBER!,
+        statusCallback: `https://${Bun.env.BASE_URL}/call-status`,
+      });
+
+      const today = new Date();
+      await db
+        .insert(calls)
+        .values({
+          withPhone: auth.phone,
+          sid: call.sid,
+          status: call.status,
+          direction: "outbound-api",
+          createdAt: today,
+          updatedAt: today,
+        })
+        .run();
+
+      return "Ask me to call you";
+    })
     .post(
       "/verify-code",
       async ({ body, db, set, setCookie, authJwt, twilio }) => {
@@ -419,7 +500,11 @@ export const authMiddleware = (app: Elysia) =>
 
 function ChangeEmailForm({ email = "" }: { email: string | null }) {
   return (
-    <form hx-post="/change-email" class="form-control self-stretch">
+    <form
+      hx-post="/change-email"
+      class="form-control self-stretch"
+      data-loading-path="/change-email"
+    >
       <label for="change-email-input" class="label">
         <span class="label-text">
           Email (Originally: <strong>{email}</strong>)
@@ -434,7 +519,13 @@ function ChangeEmailForm({ email = "" }: { email: string | null }) {
           placeholder="Email (Optional)"
           value={email ?? ""}
         />
-        <button type="submit" class="btn btn-primary">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          data-loading-class="btn-disabled"
+          data-loading-class-remove="btn-primary"
+          data-loading-disable
+        >
           Change
         </button>
       </div>
@@ -450,9 +541,13 @@ function ChangeEmailForm({ email = "" }: { email: string | null }) {
 
 function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
   return (
-    <form hx-post="/change-metadata" class="form-control self-stretch">
+    <form
+      hx-post="/change-metadata"
+      class="form-control self-stretch"
+      data-loading-path="/change-metadata"
+    >
       <label for="change-metadata-input" class="label">
-        <span class="label-text">Caller's info</span>
+        <span class="label-text">Your info</span>
       </label>
       <div class="input-group input-group-vertical">
         <textarea
@@ -463,7 +558,13 @@ function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
         >
           {metadata ?? ""}
         </textarea>
-        <button type="submit" class="btn btn-primary">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          data-loading-class="btn-disabled"
+          data-loading-class-remove="btn-primary"
+          data-loading-disable
+        >
           Update
         </button>
       </div>
@@ -473,9 +574,13 @@ function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
 
 function ChangeMyInfoForm({ myInfo }: { myInfo: string }) {
   return (
-    <form hx-post="/change-my-info" class="form-control self-stretch">
+    <form
+      hx-post="/change-my-info"
+      class="form-control self-stretch"
+      data-loading-path="/change-my-info"
+    >
       <label for="change-my-info-input" class="label">
-        <span class="label-text">Callee's info</span>
+        <span class="label-text">Quatton's info</span>
       </label>
       <div class="input-group input-group-vertical">
         <textarea
@@ -486,7 +591,13 @@ function ChangeMyInfoForm({ myInfo }: { myInfo: string }) {
         >
           {myInfo ?? ""}
         </textarea>
-        <button type="submit" class="btn btn-primary">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          data-loading-class="btn-disabled"
+          data-loading-class-remove="btn-primary"
+          data-loading-disable
+        >
           Update and See what happens 👀
         </button>
       </div>
@@ -511,9 +622,24 @@ function LeftPanel({ auth }: { auth: Auth | null }) {
         <h1 class="text-accent">{siteConfig.title}</h1>
         <h3 class="text-accent-content">{siteConfig.description}</h3>
       </div>
-      <button class={`btn btn-disabled`} disabled="true">
-        Call me (Coming soon)
-      </button>
+      <div class="space-y-1 text-center">
+        <button
+          class={`btn btn-accent`}
+          data-loading-class="btn-disabled"
+          data-loading-class-remove="btn-accent"
+          data-loading-disable
+          hx-post="/call-me"
+          data-loading-path="/call-me"
+          {...(!auth
+            ? {
+                disabled: "true",
+              }
+            : {})}
+        >
+          Ask me to call you
+        </button>
+        <p>International rates are insanely expensive. At your own risk.</p>
+      </div>
       {!auth ? (
         <div class="w-96 max-w-full space-y-4">
           <ul>

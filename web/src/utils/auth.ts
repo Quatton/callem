@@ -6,6 +6,11 @@
 //   logoutRedirectUri: `${Bun.env.AUTH_URL!}://${Bun.env.BASE_URL}/`,
 // };
 
+import { CallStatus } from "twilio/lib/rest/api/v2010/account/call";
+import { db } from "../db";
+import { Twilio } from "twilio";
+import { calls } from "../db/schema";
+
 export function generateRandomString(length: number): string {
   if (length <= 0 || !Number.isInteger(length)) {
     throw new Error("Invalid length. Length must be a positive integer.");
@@ -132,4 +137,95 @@ export function redirectToError({
 
 export function isWithinExpiration(expires: Date) {
   return new Date().getTime() < expires.getTime();
+}
+
+export async function verifyPhoneNumber({
+  From,
+  To,
+  Direction,
+}: {
+  From: string;
+  To: string;
+  Direction: "inbound" | "outbound-api";
+}) {
+  // TODO: When there are many numbers to manage this should be improved
+  // const direction = Direction
+  //   ? Direction
+  //   : From === Bun.env.PHONE_NUMBER
+  //   ? "outbound-api"
+  //   : "inbound";
+
+  const numberToVerify = Direction === "inbound" ? From : To;
+
+  const user = await db.query.verifiedUser.findFirst({
+    where: ({ phone }, { eq }) => eq(phone, numberToVerify),
+  });
+
+  return user;
+}
+
+export function canCallAgain(callStatus: CallStatus) {
+  const canCall: CallStatus[] = [
+    "completed",
+    "no-answer",
+    "failed",
+    "busy",
+    "canceled",
+  ];
+
+  return canCall.includes(callStatus);
+}
+
+export async function canCallAgainButFromTwilio(to: string) {
+  const twilio = new Twilio(
+    Bun.env.TWILIO_ACCOUNT_SID,
+    Bun.env.TWILIO_AUTH_TOKEN
+  );
+
+  // fetched the latest call to this number
+  const call = (
+    await twilio.calls.list({
+      to,
+      limit: 1,
+    })
+  )[0];
+
+  if (!call) {
+    return true;
+  }
+
+  const callStatus = call.status;
+
+  const today = new Date();
+
+  await db
+    .insert(calls)
+    .values({
+      withPhone: to,
+      createdAt: today,
+      updatedAt: today,
+      direction: call.direction as "inbound" | "outbound-api",
+      status: callStatus,
+      sid: call.sid,
+    })
+    .onConflictDoUpdate({
+      target: calls.sid,
+      set: {
+        status: callStatus,
+        updatedAt: today,
+      },
+    })
+    .run();
+
+  return canCallAgain(callStatus);
+}
+
+export async function threeCallsLimit(to: string): Promise<"ok" | "limit"> {
+  const callsToday = await db.query.calls.findMany({
+    where: ({ withPhone, status }, { eq, and }) =>
+      and(eq(withPhone, to), eq(status, "completed")),
+    orderBy: ({ createdAt }, { desc }) => desc(createdAt),
+  });
+
+  return callsToday.length >= 3 ? "limit" : "ok";
 }

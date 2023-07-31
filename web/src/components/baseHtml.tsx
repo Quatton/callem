@@ -16,11 +16,11 @@ export function BaseHtml({
     <script src="https://unpkg.com/hyperscript.org@0.9.9"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
     <link href="/public/styles/globals.css" rel="stylesheet">
-
+    <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
     <title>${title}</title>
     
   </head>
-  <body>
+  <body hx-ext="loading-states">
     ${children}
   </body>
   </html>`;
