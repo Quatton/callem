@@ -17,6 +17,7 @@ import jwt from "@elysiajs/jwt";
 import { type Auth, verifiedUser, calls } from "../db/schema";
 import { dbPlugin } from "../db/dbPlugin";
 import { eq } from "drizzle-orm";
+import sanitize from "sanitize-html";
 
 export const htmxPlugin = (app: Elysia) =>
   app
@@ -73,7 +74,9 @@ export const htmxPlugin = (app: Elysia) =>
                         <span class="text-xl max-w-xs">
                           You are logged in as
                         </span>
-                        <span class="text-xl max-w-xs">{auth.phone}</span>
+                        <span class="text-xl max-w-xs">
+                          {sanitize(auth.phone)}
+                        </span>
                         <a href="/logout" class="btn btn-error">
                           Logout
                         </a>
@@ -507,7 +510,7 @@ function ChangeEmailForm({ email = "" }: { email: string | null }) {
     >
       <label for="change-email-input" class="label">
         <span class="label-text">
-          Email (Originally: <strong>{email}</strong>)
+          Email (Originally: <strong>{sanitize(email ?? "")}</strong>)
         </span>
       </label>
       <div class="input-group">
@@ -556,7 +559,9 @@ function ChangeMetadataForm({ metadata = "" }: { metadata: string | null }) {
           class="textarea textarea-primary resize-none"
           placeholder="Your name, your company, etc."
         >
-          {metadata ?? ""}
+          {sanitize(metadata ?? "", {
+            disallowedTagsMode: "recursiveEscape",
+          })}
         </textarea>
         <button
           type="submit"
@@ -589,7 +594,9 @@ function ChangeMyInfoForm({ myInfo }: { myInfo: string }) {
           class="textarea textarea-primary resize-none"
           placeholder="Information about me"
         >
-          {myInfo ?? ""}
+          {sanitize(myInfo ?? "", {
+            disallowedTagsMode: "recursiveEscape",
+          })}
         </textarea>
         <button
           type="submit"
