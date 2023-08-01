@@ -21,12 +21,26 @@ import { sendCallSummary } from "../utils/resend";
 import { threeCallsLimit, verifyPhoneNumber } from "../utils/auth";
 import { calls } from "../db/schema";
 
+/**
+ * In Elysia, you can create plugins to extend the functionality of your app.
+ * and modularize your code into components.
+ */
 export const twilioPlugin = (app: Elysia) =>
   app
+    /** I didn't use websocket here but have tested its functionality a bit */
     .use(ws())
     .use(cookie())
     .use(authMiddleware)
     .use(dbPlugin)
+    /**
+     * My favourite architectural decision is using a playToken that's valid for 1 minute
+     * to temporarily authenticate the text-to-speech endpoint and directly connect to XILabs
+     * This way, we don't have to worry about creating a storage bucket or
+     * provision a volume to store the audio files.
+     *
+     * It takes only callSid and textToPlay as parameters, and the token is signed with a secret
+     * Pretty simple and elegant solution.
+     */
     .use(
       jwt({
         secret: process.env.AUTH_SECRET!,
@@ -38,9 +52,6 @@ export const twilioPlugin = (app: Elysia) =>
         exp: "1m",
       })
     )
-    // .derive(({ headers }) => ({
-    //   playAuth: headers.Authorization,
-    // }))
     .onParse(async ({ request }, contentType) => {
       if (contentType === "application/xml") {
         const xml = await request.text();
@@ -53,9 +64,18 @@ export const twilioPlugin = (app: Elysia) =>
       console.error(error);
       return error.message;
     })
+    /**
+     * Another amazing feature is you can decorate the context with any data you want
+     * here I use twiml to generate the XML response repeatedly so it's really nice to have
+     * it available in the context.
+     */
     .derive((_) => ({
       twiml: new Twilio.twiml.VoiceResponse(),
     }))
+    /**
+     * We store past conversations in cookies so we can retrieve them later
+     * The schema here is basically the same as OpenAI's ChatCompletionRequestMessage
+     */
     .derive(({ cookie }) => {
       const convo = cookie.convo;
       try {
@@ -88,6 +108,10 @@ export const twilioPlugin = (app: Elysia) =>
         },
       };
     })
+    /**
+     * In /call-status webhook, we grab the convo from the cookie and store it in the database
+     * and email the user a summary of the call.
+     */
     .post(
       "/call-status",
       async ({ body, db, convo }) => {
@@ -142,6 +166,11 @@ export const twilioPlugin = (app: Elysia) =>
         body: twilioCallStatusBody,
       }
     )
+    /**
+     * Here is where /text-to-speech endpoint is implemented
+     * as you can see playToken is pretty neat and easy to use
+     * callSid param might be redundant here and bug prone but it's okay.
+     */
     .get(
       "/text-to-speech/:callSid",
       async ({ playJwt, set, params: { callSid }, query: { playToken } }) => {
@@ -163,6 +192,12 @@ export const twilioPlugin = (app: Elysia) =>
         }),
       }
     )
+    /**
+     * I was trying to implement a websocket endpoint to stream the conversation
+     * to user's client but HTMX WebSocket implementation is a bit confusing
+     *
+     * Just leaving it here for now.
+     */
     .ws("/stream", {
       open: (ws) => {
         ws.send({
@@ -187,6 +222,12 @@ export const twilioPlugin = (app: Elysia) =>
         }),
       }),
     })
+    /**
+     * Main entry point for the Twilio webhook
+     *
+     * We use <Gather> tag to transcribe the user's speech and send it to /respond
+     * You can actually use <Say> to use Amazon Polly to generate speech from text
+     */
     .post(
       "/transcribe",
       async ({ body, twiml, set, convo, setConvo, playJwt }) => {
@@ -267,6 +308,12 @@ export const twilioPlugin = (app: Elysia) =>
         body: twilioFirstRequestBody,
       }
     )
+    /**
+     * Here is the seond entry point for the Twilio Gather response
+     *
+     * We just take the SpeechResult and combine that with the previous messages
+     * and send it to OpenAI to generate a response
+     */
     .post(
       "/respond",
       async ({
